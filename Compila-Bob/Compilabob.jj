@@ -1,0 +1,503 @@
+options { 
+	JAVA_UNICODE_ESCAPE = true; 
+	KEEP_LINE_COLUMN = true; 
+	STATIC = false; 
+} 
+/*
+javacc Compilabob.jj
+javac *.java
+java Compilabob < Ejemplo7.txt
+
+----------------------------------------------------------------  NOTA --------------------------------------------------------------------------
+---------------------------------------------------------- MÉTODOS POR AGREGAR --------------------------------------------------------------------
+
+Método de error "=" en lugar de ":" para las asignaciones.
+Resolver el break de estructuras por el método SKIP
+		Quizás funcione ampliando el rango de error hasta llaves de abertura y cierre junto a los punto y coma.
+
+*/
+
+PARSER_BEGIN(Compilabob) 
+import java.io.*;
+import java.util.ArrayList;
+
+public class Compilabob {  
+	String errormsg="",datos = "";
+	int sentencias_inco =0;  
+	//variebales para semantica-------------------------------
+    String Type="", Valor=""; //variables cache para capturar el par
+    String lugar = "";
+	Token var;
+    //--------------------------------------------------------
+	public static void main(String args[])  { 
+		Compilabob compilador = new Compilabob(System.in); 
+		try { 
+			compilador.Codigo();
+		}catch( Exception e ){   
+			System.out.println("\nEXCEPTION e MAIN\n" +"Sentencias incorrectas encontradas: "+compilador.sentencias_inco);
+		}
+		catch( TokenMgrError e ) { 
+			System.out.println( "Error de Token" );
+		} 
+		if(compilador.errormsg == "" && compilador.sentencias_inco == 0){
+			System.out.println("Compilador ejecutado con "+"\u00e9"+"xito");
+		}else{
+			System.out.println(compilador.errormsg);
+		}
+		System.out.println("Sentencias incorrectas encontradas: "+compilador.sentencias_inco);
+		System.out.println("----- Tabla hash ----"+ ClaseSemantica.tabla);
+		for(int i = 0; i < Expresiones.tokensValue.size(); i++) {
+            System.out.println(Expresiones.tokensValue.get(i).toString());
+        }
+	}  
+	
+	
+}   
+
+PARSER_END(Compilabob)   
+  
+SKIP :   
+{  
+	< " " | "\t" | "\r" | "\n" | "\r\n" >  //White space 1
+	| <"#" (~["\n","\r"])* ("\n"|"\r"|"\r\n") >  //Single-line comments 2
+	| <"##"(~["/"])*  "#""#" >  //Multi-line comments  3 ---- 
+}
+
+TOKEN:   
+{   
+<INICIO: "compilar_coatl">  //4
+|<FIN: "ejecutar_coatl">  //5
+|<IF: "decide">   //6
+|<ELSE: "sino">   //7
+|<CicloIterado: "repito hasta que">  //8
+|<CicloLimit: "repito"> //9
+|<CicloWhile: "mientras">  //10
+|<ESCRIBIR: "muestra">//11
+|<LEER:"recibir">//12
+}  
+
+TOKEN:   
+{   
+<ParenIzq: "(">  //13
+|<ParenDer: ")"> //14
+|<SepIzq: "{">  //15
+|<SepDer: "}" >  //16
+|<PuntoComa: ";"> //17
+|<COMA: ",">  //18
+}  
+
+TOKEN:  
+{  
+<ASIGNACION: ":"> //19
+|<MENOR: "<">  //20
+|<MAYOR: ">"> //21
+|<MENOR_IGUAL: "<=">//22
+|<MAYOR_IGUAL: ">="> //23
+|<IGUALDAD: "="> //24
+|<OR: "|">  //25
+|<AND: "&"> //26
+|<NOTEQ: "!="> //27
+|<NOT: "!"> //28
+|<MAS: "+"> //29
+|<MENOS: "-"> //30
+|<DIV: "/"> //31
+|<MODULO: "%"> //32
+|<MULTI: "*"> //33
+}   
+// [("E_")(["a"-"z"|"A"-"Z"|"_"|"0"-"9"])+]  
+//"E_"(["A"-"Z","a"-"z"](["A"-"Z","a"-"z","0"-"9"])*)  
+// NOT ~ 
+
+//<CADENAS: ("\""(~["\"","#","\n","\r","#","#","\r","\n"])*"\"")>//31
+//Token t = getToken();
+	//expresion = expresion + t.image;
+
+TOKEN: 
+{ 
+<ENTERO: "E_">//34
+|<FLOTANTE: "D_">//35
+|<ID_CADENA: "C_">//36
+|<BOOLEANO: "L_">//37
+|<NUMERO: (["0"-"9"])+>//38
+|<NUMDECIMAL: (["0"-"9"])+ "." (["0"-"9"])+ | (["0"-"9"])+ "." | "." (["0"-"9"])+>//39
+|<CADENAS: ("\""(~["\"","#","\n","\r","#","#","\r","\n"])*"\"")>//40
+|<EST_LOGIC:("falso"|"verdad")>//41
+}   
+
+TOKEN: 
+{
+	<IDENTIFICADOR:["A"-"Z","a"-"z"](["A"-"Z","a"-"z","0"-"9"])*>//42
+
+}
+
+TOKEN: 
+{ 
+	<UNKNOW : ~[]> //43
+}
+
+
+
+//------------------------------- ANÁLISIS SINTACTICO - AREA DE GRAMATICAS ----------------------------------------------------
+
+// Gramatica inicial que contiene el cuerpo basico del codigo
+ void Codigo():
+{
+	ClaseSemantica.SetTables();	
+} 
+{
+	((<INICIO> |ErrorNoinicio())(<SepIzq> |ErrorNoSepINICIO())) 
+	Cuerpo() 
+	((<SepDer>|ErrorNoSepFINAL())(<FIN>|ErrorNOFIN()))<EOF> 
+} 
+
+// método cuerpo, lee un conjunto de sentencias tamaño n
+void Cuerpo():{} 
+{ 
+(sentencias())* 
+} 
+
+// metodo sentencias, lee todas las gramaticas que pueden ser reconocidas por el compilador
+void sentencias():{} 
+{ 
+try {
+(LOOKAHEAD(2) 
+ // PuntoComa toen separado debido a la variabilidad del codigo
+Declaracion()   // Declaracion de Variables k
+|( Asignacion()( <PuntoComa>|errorFinlinea())) //Asignacion de valores 
+| Ciclo_RepitoHastaQue() 
+| Ciclo_RepitoMientras()
+| Decide()
+| Muestra()
+| error()
+| errorDOBLElinea()
+  )
+}
+catch (ParseException e) {
+	System.out.println(e.toString());  //imprime el mensaje de error
+	System.out.println("ESTE ES EL TOKEN ALV "+token.kind);
+    error_skipto(PuntoComa, FIN, EOF);
+  } 
+
+}
+
+void Muestra():{}
+{
+
+	<ESCRIBIR> <ParenIzq>  Mensaje()   <ParenDer> (<PuntoComa>|errorFinlinea())
+}
+
+void Mensaje():{}{
+
+	Concatenacion() | {}
+}
+
+void Concatenacion():{}{
+
+  ( LOOKAHEAD(2)
+  	(<IDENTIFICADOR>|<CADENAS>) <MAS> Concatenacion() | (<IDENTIFICADOR>|<CADENAS>)) 
+}
+
+//########  DECIDE IF-ELSE ##########
+void Decide():{}
+{
+IF() ( 
+	LOOKAHEAD(2)
+	ELSE()|{})
+
+}
+void IF():{ }
+{
+	<IF> <ParenIzq> OpComparacion() <ParenDer>  <ASIGNACION>  <SepIzq>
+	(	 
+	sentencias() )*
+	<SepDer>
+}
+
+void ELSE():{}
+{
+	<ELSE> <SepIzq> 
+	(	 
+	sentencias() )*<SepDer> (<PuntoComa>|errorFinlinea())
+}
+
+
+// ############## CICLOS #############
+
+void Ciclo_RepitoHastaQue():{}
+{
+	<CicloIterado> <ParenIzq> <IDENTIFICADOR> <COMA> (<IDENTIFICADOR>|DataType()) <ParenDer> (<ASIGNACION>|ErrorNoAsignacion())
+	<SepIzq> (sentencias())* <SepDer> (<PuntoComa>|errorFinlinea())
+
+}
+
+ void Ciclo_RepitoMientras():{}
+{
+	<CicloLimit> (<ASIGNACION>|ErrorNoAsignacion()) <SepIzq> 
+	(sentencias())* 
+	<SepDer> <CicloWhile> <ParenIzq> OpComparacion() <ParenDer> (<PuntoComa>|errorFinlinea())
+} 
+ 
+// DECLARACION DE VARIABLES 
+void Declaracion():
+{
+	int td;
+}
+{
+  Variable_dato(){
+	td = token.kind;
+  } var = <IDENTIFICADOR>{
+	if(ClaseSemantica.checkVariable(var).equals("")){
+		errormsg = errormsg+"Error semántico en la línea " +var.beginLine +", columna "+var.beginColumn +", la variable "+ var.image + " ya  ha sido declarada \r\n";
+		sentencias_inco++;
+		Expresiones.tokensValue.remove((Expresiones.tokensValue.size()-1));
+	}else{
+		ClaseSemantica.InsertarSimbolo(var,td);
+		System.out.println("Esta es la image "+token.image);
+		Expresiones.tokensValue.add(token.image);
+	}
+  } 
+  ((<ASIGNACION>{Expresiones.tokensValue.add(token.image);}  AsignacionD())|{}) (<PuntoComa>{Expresiones.tokensValue.add(token.image);}|errorFinlinea())
+} 
+// ASIGNACION DE VALORES DESPUES DE UNA DECLARACION
+void AsignacionD():{} 
+{  
+	( <LEER> {Expresiones.tokensValue.add(token.image);} | Expresion() )
+} 
+// ASIGNACION GENERAL DE VALORES A UNA VARIABLE
+void Asignacion():
+{
+	Token t2;
+}
+{  
+	var = <IDENTIFICADOR>{ 
+	if(!(ClaseSemantica.checkVariable(var).equals(""))){
+		errormsg = errormsg+ClaseSemantica.checkVariable(var);
+		sentencias_inco++;
+		Expresiones.tokensValue.remove((Expresiones.tokensValue.size()-1));
+	}else{
+		Expresiones.tokensValue.add(token.image);
+	}
+  }  <ASIGNACION>{Expresiones.tokensValue.add(token.image);}
+	( <LEER>| Expresion()) {
+		t2 = token;
+		
+		if(!(ClaseSemantica.checkAsing(var,t2).equals(" "))){
+			errormsg = errormsg+ClaseSemantica.checkAsing(var,t2);
+			sentencias_inco++;
+			Expresiones.tokensValue.remove((Expresiones.tokensValue.size()-1));
+		}
+	}
+} 
+
+
+//###### GRAMATICA PARA EXPRESIONES MATEMATICAS DESPUES DE UNA ASIGNACION O DECLARACION
+void Expresion():{} 
+{   
+ 
+	Termino() ((<MAS>|<MENOS>){Expresiones.tokensValue.add(token.image);} Termino())*
+
+	  
+} 
+
+// Epsilon  ---> | {}
+
+void Termino():{}
+{  
+	Factor() ((<MULTI>|<DIV>|<MODULO>){Expresiones.tokensValue.add(token.image);} Factor())*
+}
+void Factor():{}
+{
+	(<MENOS>{Expresiones.tokensValue.add(token.image);} Factor()) | Primario()
+ 
+}
+
+void Primario():{}
+{
+	((<ParenIzq>{Expresiones.tokensValue.add(token.image);}	Expresion() <ParenDer>{Expresiones.tokensValue.add(token.image);})  | DataType() | <IDENTIFICADOR> {Expresiones.tokensValue.add(token.image);})
+}
+
+
+// ############## OPERACIONES DE COMPARACION PARA IF O CICLOS  ####################
+void OpComparacion():{}{
+		ExpresionL() Comparadores() ExpresionL()
+}
+
+void ExpresionL():{} 
+{   LOOKAHEAD(2) 
+	(  FactorL() Logicos() ExpresionL()  ) 
+	  
+	|  FactorL()
+} 
+
+void FactorL():{}
+{
+	(  DataType() | (<IDENTIFICADOR>{Expresiones.tokensValue.add(token.image);} | errorNoIden()) )
+}
+
+// Epsilon ---> | {}
+
+// DATOS Y OPERADORES USADOS EN SENTENCIAS
+void DataType():{} 
+{ //Tipos de datos  
+	 
+(<NUMERO> |<NUMDECIMAL> | <EST_LOGIC> | <CADENAS>){Expresiones.tokensValue.add(token.image);}
+} 
+void Comparadores():{}
+{
+ (<MENOR>   
+|<MAYOR> 
+|<MENOR_IGUAL>  
+|<MAYOR_IGUAL>  
+|<IGUALDAD> 
+|<NOTEQ>){Expresiones.tokensValue.add(token.image);}
+}
+
+void Logicos():{}
+{
+  (<OR>  
+ |<AND>){Expresiones.tokensValue.add(token.image);}
+}
+
+
+void Operadores():{} 
+{ //Operadores para expresiones matematicas
+	LOOKAHEAD(3)
+ <MAS> 
+|<MENOS>  
+|<DIV> 
+|<MODULO>   
+|<MULTI>   
+} 
+
+void Variable_dato():{} 
+{ //Tipo del dato de la variable del dato a la hora de su declaracion
+	LOOKAHEAD(3)
+<ENTERO>   
+|<FLOTANTE>   
+|<ID_CADENA>   
+|<BOOLEANO>  
+} 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ---------------------------------------- TRATAMIENTO DE ERRORES --------------------------------------------------------
+JAVACODE
+void error_skipto(int puntocoma, int fincode, int finfile) {
+  Token t;
+  sentencias_inco++;
+  // consume tokens all the way up to a token of "kind" - use a do-while loop
+  // rather than a while because the current token is the one immediately before
+  // the erroneous token (in our case the token immediately before what should
+  // have been "if"/"while".
+  //, int sepiz   &&(t.kind !=sepiz)
+  do {
+	System.out.println("ESTE ES EL TOKEN ALV "+token.kind);
+    t = getNextToken();
+  }
+  while ((t.kind !=puntocoma)&&(t.kind !=fincode)&&(t.kind !=finfile));
+}
+
+void error():  
+{
+	String errores = " "; 
+	Token t;
+} 
+{  
+	t = <UNKNOW> 
+{ 
+	errores = "Simbolo: " + t.image + " no reconocido en la línea "+String.valueOf(t.beginLine)+" columna "+String.valueOf(t.endColumn)+"\r\n"; 
+	errormsg = errormsg+errores; 
+	sentencias_inco++;
+} 
+}
+
+ 
+void errorFinlinea():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+token.beginLine+" Columna: "+(token.endColumn+1)+" falta ';'");
+}{
+	 
+	{} 
+	 
+}
+void errorDOBLElinea():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+token.beginLine+" Columna: "+(token.endColumn+1)+" hay mas de un ';'  ");
+}{
+	 
+	 <PuntoComa>  
+}
+
+
+//GRAMATICAS DE ERROR PARA LA ESTRUCTURA DEL CODIGO COATL
+
+void ErrorNoinicio():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+getToken(1).beginLine+" Columna: "+getToken(1).endColumn+": No hay palabra de arranque \"compilar_coatl\" ");
+}{
+	 
+	  {} 
+}
+
+void ErrorNoSepINICIO():{
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+getToken(1).beginLine+" Columna: "+getToken(1).beginColumn+" No hay llave izquierda \"{\" ");
+	sentencias_inco++;
+}{
+	 
+	  {} 
+}
+void ErrorNoSepFINAL():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+token.beginLine+" Columna: "+token.beginColumn+": No hay llave derecha \"}\"");
+}{
+	 
+	  {} 
+}
+void ErrorNOFIN():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+token.beginLine+" Columna: "+token.beginColumn+" No hay palabra de cierre\"ejecutar_coatl\"" );
+}{
+	 
+	  {} 
+}
+void ErrorNoAsignacion():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+token.beginLine+" Columna: "+token.beginColumn+" Falta signo de asignación \":\" " );
+}{
+	 
+	  {} 
+}
+void errorNoIden():{
+	sentencias_inco++;
+	System.out.println("Error sint"+"\u00e1"+"ctico en la linea: "+token.beginLine+" Columna: "+token.beginColumn+" Se esperaba un \"<IDENTIFICADOR>\" " );
+}{
+	 
+	  {} 
+}

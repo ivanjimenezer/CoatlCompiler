@@ -1,0 +1,11 @@
+compilar_coatl{
+ 
+	E_ n : 5+30-18;
+	C_ cadena : "onon$";
+	n:6;
+	D_ dcimal: 5.4;
+	E_ x : 3;
+
+}ejecutar_coatl
+
+ 
